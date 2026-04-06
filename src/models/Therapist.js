@@ -194,11 +194,9 @@ class Therapist {
          COUNT(DISTINCT a.student_id) AS total_students,
          SUM(CASE WHEN a.status = 'completed' THEN 1 ELSE 0 END) AS completed_sessions,
          SUM(CASE WHEN a.status = 'pending' THEN 1 ELSE 0 END) AS pending_requests,
-         SUM(CASE WHEN a.status = 'approved' AND a.appointment_date >= CURDATE() THEN 1 ELSE 0 END) AS upcoming_sessions,
-         COUNT(DISTINCT sn.note_id) AS session_notes_count
+         SUM(CASE WHEN a.status = 'approved' AND a.appointment_date >= CURDATE() THEN 1 ELSE 0 END) AS upcoming_sessions
        FROM therapists t
        LEFT JOIN appointments a ON t.therapist_id = a.therapist_id
-       LEFT JOIN session_notes sn ON a.appointment_id = sn.appointment_id
        WHERE t.therapist_id = ?`,
       [therapistId]
     );

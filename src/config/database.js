@@ -125,6 +125,19 @@ const initDatabase = async () => {
         INDEX idx_date (appointment_date)
       )
     `);
+
+    const [therapistNotesColumn] = await connection.query(
+      `SELECT COLUMN_NAME
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = ?
+       AND TABLE_NAME = 'appointments'
+       AND COLUMN_NAME = 'therapist_notes'`,
+      [process.env.DB_NAME]
+    );
+
+    if (therapistNotesColumn.length === 0) {
+      await connection.query('ALTER TABLE appointments ADD COLUMN therapist_notes TEXT NULL');
+    }
     
     // Create wellbeing_questionnaires table
     await connection.query(`
@@ -150,24 +163,6 @@ const initDatabase = async () => {
         FOREIGN KEY (questionnaire_id) REFERENCES wellbeing_questionnaires(questionnaire_id) ON DELETE CASCADE,
         INDEX idx_student (student_id),
         INDEX idx_submitted_at (submitted_at)
-      )
-    `);
-    
-    // Create session_notes table
-    await connection.query(`
-      CREATE TABLE IF NOT EXISTS session_notes (
-        note_id INT PRIMARY KEY AUTO_INCREMENT,
-        appointment_id INT UNIQUE NOT NULL,
-        therapist_id INT NOT NULL,
-        notes TEXT NOT NULL,
-        recommendations TEXT,
-        next_session_date DATE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        FOREIGN KEY (appointment_id) REFERENCES appointments(appointment_id) ON DELETE CASCADE,
-        FOREIGN KEY (therapist_id) REFERENCES therapists(therapist_id) ON DELETE CASCADE,
-        INDEX idx_appointment (appointment_id),
-        INDEX idx_therapist (therapist_id)
       )
     `);
     
@@ -221,6 +216,8 @@ const initDatabase = async () => {
         INDEX idx_created_at (created_at)
       )
     `);
+
+    await connection.query('DROP TABLE IF EXISTS session_notes');
     
     console.log('Database tables created successfully');
     

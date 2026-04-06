@@ -43,12 +43,10 @@ class Appointment {
     let query = `
       SELECT a.*,
              u.full_name AS therapist_name,
-             t.specialization,
-             sn.notes AS session_notes
+             t.specialization
       FROM appointments a
       JOIN therapists t ON a.therapist_id = t.therapist_id
       JOIN users u ON t.user_id = u.user_id
-      LEFT JOIN session_notes sn ON a.appointment_id = sn.appointment_id
       WHERE a.student_id = ?
     `;
     const params = [studentId];
@@ -76,11 +74,20 @@ class Appointment {
              u.full_name AS student_name,
              s.age,
              s.gender,
-             MAX(wr.average_score) AS wellbeing_score
+             wr.average_score AS wellbeing_score,
+             wr.responses AS wellbeing_responses,
+             wr.submitted_at AS wellbeing_submitted_at
       FROM appointments a
       JOIN students s ON a.student_id = s.student_id
       JOIN users u ON s.user_id = u.user_id
-      LEFT JOIN wellbeing_responses wr ON s.student_id = wr.student_id
+      LEFT JOIN wellbeing_responses wr
+        ON wr.response_id = (
+          SELECT wr2.response_id
+          FROM wellbeing_responses wr2
+          WHERE wr2.student_id = s.student_id
+          ORDER BY wr2.submitted_at DESC, wr2.response_id DESC
+          LIMIT 1
+        )
       WHERE a.therapist_id = ?
     `;
     const params = [therapistId];
@@ -90,7 +97,6 @@ class Appointment {
       params.push(status);
     }
 
-    query += ' GROUP BY a.appointment_id, u.full_name, s.age, s.gender';
     query += ' ORDER BY a.appointment_date ASC, a.appointment_time ASC';
 
     if (limit !== null && offset !== null) {
@@ -115,6 +121,15 @@ class Appointment {
     const [result] = await connection.query(
       'UPDATE appointments SET status = ? WHERE appointment_id = ?',
       ['cancelled', appointmentId]
+    );
+
+    return result.affectedRows > 0;
+  }
+
+  static async reschedule(appointmentId, appointmentDate, appointmentTime, connection = pool) {
+    const [result] = await connection.query(
+      'UPDATE appointments SET appointment_date = ?, appointment_time = ?, status = ? WHERE appointment_id = ?',
+      [appointmentDate, appointmentTime, 'pending', appointmentId]
     );
 
     return result.affectedRows > 0;
@@ -245,6 +260,29 @@ class Appointment {
       [appointmentId, studentId]
     );
     return rows[0] || null;
+  }
+
+  static async findForStudentReschedule(appointmentId, studentId, connection = pool) {
+    const [rows] = await connection.query(
+      `SELECT a.*, t.user_id, u.email, u.full_name
+       FROM appointments a
+       JOIN therapists t ON a.therapist_id = t.therapist_id
+       JOIN users u ON t.user_id = u.user_id
+       WHERE a.appointment_id = ?
+       AND a.student_id = ?
+       AND a.status IN ('pending', 'approved')`,
+      [appointmentId, studentId]
+    );
+    return rows[0] || null;
+  }
+
+  static async saveTherapistNotes(appointmentId, therapistNotes, connection = pool) {
+    const [result] = await connection.query(
+      'UPDATE appointments SET therapist_notes = ? WHERE appointment_id = ?',
+      [therapistNotes, appointmentId]
+    );
+
+    return result.affectedRows > 0;
   }
 
   static async delete(appointmentId, connection = pool) {

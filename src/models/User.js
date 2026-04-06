@@ -41,17 +41,17 @@ class User {
     const fields = [];
     const values = [];
 
-    if (updates.full_name) {
+    if (updates.full_name !== undefined) {
       fields.push('full_name = ?');
       values.push(updates.full_name);
     }
 
-    if (updates.email) {
+    if (updates.email !== undefined) {
       fields.push('email = ?');
       values.push(updates.email);
     }
 
-    if (updates.password) {
+    if (updates.password !== undefined) {
       fields.push('password = ?');
       values.push(await bcrypt.hash(updates.password, 10));
     }

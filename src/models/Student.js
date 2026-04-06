@@ -43,17 +43,17 @@ class Student {
     const fields = [];
     const values = [];
 
-    if (updates.age) {
+    if (updates.age !== undefined) {
       fields.push('age = ?');
       values.push(updates.age);
     }
 
-    if (updates.gender) {
+    if (updates.gender !== undefined) {
       fields.push('gender = ?');
       values.push(updates.gender);
     }
 
-    if (updates.emergency_contact) {
+    if (updates.emergency_contact !== undefined) {
       fields.push('emergency_contact = ?');
       values.push(updates.emergency_contact);
     }

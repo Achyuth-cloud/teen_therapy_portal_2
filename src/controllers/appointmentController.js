@@ -2,6 +2,33 @@ const { pool } = require('../config/database');
 const Student = require('../models/Student');
 const Therapist = require('../models/Therapist');
 const Appointment = require('../models/Appointment');
+const WellbeingResponse = require('../models/WellbeingResponse');
+const {
+  isFutureAppointment,
+  isPastAppointment,
+  isValidMeetingLink,
+  canTransitionAppointmentStatus
+} = require('../utils/appointmentRules');
+
+const normalizeWellbeingResponses = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch (error) {
+      return [];
+    }
+  }
+
+  if (value && typeof value === 'object') {
+    return value;
+  }
+
+  return null;
+};
 
 // @desc    Book appointment
 // @route   POST /api/appointments/book
@@ -18,6 +45,12 @@ const bookAppointment = async (req, res) => {
     
     if (!studentId) {
       return res.status(404).json({ message: 'Student profile not found' });
+    }
+
+    const hasCompletedQuestionnaire = await WellbeingResponse.hasCompletedQuestionnaire(studentId, 10);
+
+    if (!hasCompletedQuestionnaire) {
+      return res.status(400).json({ message: 'Please complete the 10-question wellbeing questionnaire before booking an appointment' });
     }
     
     // Check if therapist exists and is available
@@ -108,7 +141,12 @@ const getTherapistAppointments = async (req, res) => {
     }
     
     const appointments = await Appointment.getTherapistAppointments(therapistId);
-    res.json(appointments);
+    res.json(
+      appointments.map((appointment) => ({
+        ...appointment,
+        wellbeing_responses: normalizeWellbeingResponses(appointment.wellbeing_responses)
+      }))
+    );
     
   } catch (error) {
     console.error(error);
@@ -135,6 +173,20 @@ const updateAppointmentStatus = async (req, res) => {
 
     if (!appointment) {
       return res.status(404).json({ message: 'Appointment not found' });
+    }
+
+    if (!canTransitionAppointmentStatus(appointment.status, status)) {
+      return res.status(400).json({ message: `Cannot change appointment status from ${appointment.status} to ${status}` });
+    }
+
+    if (status === 'approved') {
+      if (!meetingLink) {
+        return res.status(400).json({ message: 'A meeting link is required to approve an appointment' });
+      }
+
+      if (!isValidMeetingLink(meetingLink)) {
+        return res.status(400).json({ message: 'Enter a valid meeting link' });
+      }
     }
     
     // Update status
@@ -190,6 +242,10 @@ const cancelAppointment = async (req, res) => {
       return res.status(404).json({ message: 'Appointment not found or cannot be cancelled' });
     }
 
+    if (isPastAppointment(appointment.appointment_date, appointment.appointment_time)) {
+      return res.status(400).json({ message: 'Past appointments cannot be cancelled' });
+    }
+
     await Appointment.cancel(id, connection);
     
     // Notify therapist
@@ -212,6 +268,158 @@ const cancelAppointment = async (req, res) => {
   }
 };
 
+// @desc    Reschedule appointment
+// @route   PUT /api/appointments/:id/reschedule
+// @access  Private (Student)
+const rescheduleAppointment = async (req, res) => {
+  const { id } = req.params;
+  const { appointmentDate, appointmentTime } = req.body;
+
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const studentId = await Student.getStudentIdByUserId(req.user.user_id);
+
+    const appointment = await Appointment.findForStudentReschedule(id, studentId, connection);
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found or cannot be rescheduled' });
+    }
+
+    if (!appointmentDate || !appointmentTime) {
+      return res.status(400).json({ message: 'New appointment date and time are required' });
+    }
+
+    if (isPastAppointment(appointment.appointment_date, appointment.appointment_time)) {
+      return res.status(400).json({ message: 'Past appointments cannot be rescheduled' });
+    }
+
+    if (!isFutureAppointment(appointmentDate, appointmentTime)) {
+      return res.status(400).json({ message: 'Appointments must be scheduled for a future date and time' });
+    }
+
+    const currentDate = String(appointment.appointment_date).slice(0, 10);
+    const currentTime = String(appointment.appointment_time).slice(0, 5);
+
+    if (currentDate === appointmentDate && currentTime === appointmentTime) {
+      return res.status(400).json({ message: 'Select a different date or time to reschedule' });
+    }
+
+    const [availability] = await connection.query(
+      `SELECT start_time, end_time
+       FROM availability
+       WHERE therapist_id = ?
+       AND available_date = ?
+       AND is_booked = FALSE`,
+      [appointment.therapist_id, appointmentDate]
+    );
+
+    const availableTimes = [];
+    for (const slot of availability) {
+      let start = new Date(`1970-01-01T${String(slot.start_time).slice(0, 8)}`);
+      const end = new Date(`1970-01-01T${String(slot.end_time).slice(0, 8)}`);
+
+      while (start < end) {
+        availableTimes.push(start.toTimeString().slice(0, 5));
+        start.setMinutes(start.getMinutes() + 30);
+      }
+    }
+
+    if (!availableTimes.includes(appointmentTime)) {
+      return res.status(400).json({ message: 'Selected time is not part of the therapist availability for that date' });
+    }
+
+    const hasConflict = await Appointment.checkConflict(
+      appointment.therapist_id,
+      appointmentDate,
+      appointmentTime,
+      id,
+      connection
+    );
+
+    if (hasConflict) {
+      return res.status(400).json({ message: 'Time slot already booked' });
+    }
+
+    await Appointment.reschedule(id, appointmentDate, appointmentTime, connection);
+
+    await connection.query(
+      `INSERT INTO notifications (user_id, title, message, type)
+       VALUES (?, ?, ?, 'appointment')`,
+      [
+        appointment.user_id,
+        'Appointment Reschedule Request',
+        `An appointment has been rescheduled to ${appointmentDate} at ${appointmentTime} and is awaiting your approval.`
+      ]
+    );
+
+    await connection.commit();
+
+    res.json({ message: 'Appointment rescheduled successfully and is pending approval' });
+  } catch (error) {
+    await connection.rollback();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+};
+
+// @desc    Save therapist notes for a completed appointment
+// @route   PUT /api/appointments/:id/notes
+// @access  Private (Therapist)
+const saveTherapistNotes = async (req, res) => {
+  const { id } = req.params;
+  const { therapistNotes } = req.body;
+
+  const connection = await pool.getConnection();
+
+  try {
+    await connection.beginTransaction();
+
+    const therapistId = await Therapist.getTherapistIdByUserId(req.user.user_id);
+    const appointment = await Appointment.findForTherapistAction(id, therapistId, connection);
+
+    if (!appointment) {
+      return res.status(404).json({ message: 'Appointment not found' });
+    }
+
+    if (appointment.status !== 'completed') {
+      return res.status(400).json({ message: 'Session notes can only be added after the appointment is completed' });
+    }
+
+    const trimmedNotes = typeof therapistNotes === 'string' ? therapistNotes.trim() : '';
+
+    if (!trimmedNotes) {
+      return res.status(400).json({ message: 'Session notes are required' });
+    }
+
+    if (trimmedNotes.length > 2000) {
+      return res.status(400).json({ message: 'Session notes must be 2000 characters or fewer' });
+    }
+
+    await Appointment.saveTherapistNotes(id, trimmedNotes, connection);
+
+    await connection.query(
+      `INSERT INTO notifications (user_id, title, message, type)
+       VALUES (?, ?, ?, 'appointment')`,
+      [appointment.user_id, 'Session Notes Added', 'Your therapist has added notes to your completed session.']
+    );
+
+    await connection.commit();
+
+    res.json({ message: 'Session notes saved successfully' });
+  } catch (error) {
+    await connection.rollback();
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  } finally {
+    connection.release();
+  }
+};
+
 // @desc    Get available time slots
 // @route   GET /api/appointments/available-slots
 // @access  Private
@@ -219,6 +427,10 @@ const getAvailableSlots = async (req, res) => {
   const { therapistId, date } = req.query;
   
   try {
+    if (!therapistId || !date) {
+      return res.status(400).json({ message: 'Therapist and date are required' });
+    }
+
     const [bookedSlots] = await pool.query(
       `SELECT appointment_time 
        FROM appointments 
@@ -269,5 +481,7 @@ module.exports = {
   getTherapistAppointments,
   updateAppointmentStatus,
   cancelAppointment,
+  rescheduleAppointment,
+  saveTherapistNotes,
   getAvailableSlots
 };

@@ -1,5 +1,25 @@
 const { pool } = require('../config/database');
 
+const normalizeResponses = (value) => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch (error) {
+      return [];
+    }
+  }
+
+  if (value && typeof value === 'object') {
+    return value;
+  }
+
+  return [];
+};
+
 class WellbeingResponse {
   // Create wellbeing response
   static async create(responseData) {
@@ -28,7 +48,7 @@ class WellbeingResponse {
     );
     
     if (rows[0]) {
-      rows[0].responses = JSON.parse(rows[0].responses);
+      rows[0].responses = normalizeResponses(rows[0].responses);
     }
     
     return rows[0];
@@ -49,8 +69,8 @@ class WellbeingResponse {
     );
     
     // Parse JSON responses
-    rows.forEach(row => {
-      row.responses = JSON.parse(row.responses);
+    rows.forEach((row) => {
+      row.responses = normalizeResponses(row.responses);
     });
     
     return rows;
@@ -69,10 +89,20 @@ class WellbeingResponse {
     );
     
     if (rows[0]) {
-      rows[0].responses = JSON.parse(rows[0].responses);
+      rows[0].responses = normalizeResponses(rows[0].responses);
     }
     
     return rows[0];
+  }
+
+  static async hasCompletedQuestionnaire(studentId, requiredQuestionCount = 10) {
+    const latest = await this.getLatest(studentId);
+
+    if (!latest || !Array.isArray(latest.responses)) {
+      return false;
+    }
+
+    return latest.responses.length >= requiredQuestionCount;
   }
 
   // Get wellbeing trends

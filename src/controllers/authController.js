@@ -187,4 +187,38 @@ const changePassword = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getMe, changePassword };
+const updateProfile = async (req, res) => {
+  const { fullName, email } = req.body;
+
+  try {
+    const existingUser = await User.findByEmail(email);
+
+    if (existingUser && existingUser.user_id !== req.user.user_id) {
+      return res.status(400).json({ message: 'Email is already in use' });
+    }
+
+    await User.update(req.user.user_id, {
+      full_name: fullName,
+      email
+    });
+
+    const updatedUser = await User.findById(req.user.user_id);
+
+    let roleData = null;
+    if (updatedUser.role === 'student') {
+      roleData = await Student.findByUserId(updatedUser.user_id);
+    } else if (updatedUser.role === 'therapist') {
+      roleData = await Therapist.findByUserId(updatedUser.user_id);
+    }
+
+    res.json({
+      ...updatedUser,
+      roleData
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+module.exports = { register, login, getMe, changePassword, updateProfile };
