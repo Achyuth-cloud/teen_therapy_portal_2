@@ -107,10 +107,25 @@ const getQuestionnaires = async (req, res) => {
   }
 };
 
+// @desc    Get latest wellbeing scores for all students
+// @route   GET /api/wellbeing/students/latest
+// @access  Private (Therapist)
+const getLatestStudentScores = async (req, res) => {
+  try {
+    const students = await WellbeingResponse.getAllLatestScores();
+    res.json(students);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 module.exports = {
   submitResponse,
   getWellbeingHistory,
   getStudentWellbeing,
   getWellbeingTrends,
-  getQuestionnaires
+  getQuestionnaires,
+  getLatestStudentScores
 };

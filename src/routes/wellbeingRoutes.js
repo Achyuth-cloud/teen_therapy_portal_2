@@ -6,7 +6,8 @@ const {
   getWellbeingHistory,
   getStudentWellbeing,
   getWellbeingTrends,
-  getQuestionnaires
+  getQuestionnaires,
+  getLatestStudentScores
 } = require('../controllers/wellbeingController');
 const { wellbeingResponseValidation } = require('../middleware/validation');
 
@@ -14,6 +15,7 @@ router.post('/submit', protect, authorize('student'), wellbeingResponseValidatio
 router.get('/history', protect, authorize('student'), getWellbeingHistory);
 router.get('/trends', protect, authorize('student'), getWellbeingTrends);
 router.get('/questionnaires', protect, getQuestionnaires);
+router.get('/students/latest', protect, authorize('therapist'), getLatestStudentScores);
 router.get('/student/:studentId', protect, authorize('therapist'), getStudentWellbeing);
 
 module.exports = router;

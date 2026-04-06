@@ -228,7 +228,7 @@ const getAvailableSlots = async (req, res) => {
       [therapistId, date]
     );
     
-    const bookedTimes = bookedSlots.map(slot => slot.appointment_time);
+    const bookedTimes = bookedSlots.map((slot) => String(slot.appointment_time).slice(0, 5));
     
     // Get therapist availability for the date
     const [availability] = await pool.query(

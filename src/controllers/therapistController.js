@@ -42,6 +42,14 @@ const setAvailability = async (req, res) => {
   const { availableDate, startTime, endTime } = req.body;
   
   try {
+    if (!availableDate || !startTime || !endTime) {
+      return res.status(400).json({ message: 'Date, start time, and end time are required' });
+    }
+
+    if (startTime >= endTime) {
+      return res.status(400).json({ message: 'End time must be later than start time' });
+    }
+
     const therapistId = await Therapist.getTherapistIdByUserId(req.user.user_id);
     
     if (!therapistId) {
@@ -69,9 +77,19 @@ const setAvailability = async (req, res) => {
 // @route   GET /api/therapists/availability
 // @access  Private
 const getAvailability = async (req, res) => {
-  const { therapistId, startDate, endDate } = req.query;
+  const { therapistId: therapistIdParam, startDate, endDate } = req.query;
   
   try {
+    let therapistId = therapistIdParam;
+
+    if (!therapistId && req.user.role === 'therapist') {
+      therapistId = await Therapist.getTherapistIdByUserId(req.user.user_id);
+    }
+
+    if (!therapistId) {
+      return res.status(400).json({ message: 'Therapist ID is required' });
+    }
+
     const availability = await Therapist.getAvailability(therapistId, startDate, endDate);
     res.json(availability);
     

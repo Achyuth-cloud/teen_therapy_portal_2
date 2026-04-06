@@ -9,6 +9,7 @@ const therapistRoutes = require('./routes/therapistRoutes');
 const wellbeingRoutes = require('./routes/wellbeingRoutes');
 const resourceRoutes = require('./routes/resourceRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const sessionNoteRoutes = require('./routes/sessionNoteRoutes');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
@@ -36,6 +37,7 @@ app.use('/api/therapists', therapistRoutes);
 app.use('/api/wellbeing', wellbeingRoutes);
 app.use('/api/resources', resourceRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/session-notes', sessionNoteRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
