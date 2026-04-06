@@ -254,6 +254,66 @@ const insertDefaultData = async (connection) => {
       
       console.log('Default admin user created');
     }
+
+    const therapistSeeds = [
+      {
+        fullName: 'Dr. Sarah Johnson',
+        email: 'therapist@example.com',
+        password: 'Therapist@123',
+        specialization: 'Teen Counseling',
+        experienceYears: 8,
+        bio: 'Licensed therapist specializing in adolescent wellbeing, anxiety, and stress support.'
+      },
+      {
+        fullName: 'Dr. Michael Chen',
+        email: 'michael.chen@example.com',
+        password: 'Therapist@123',
+        specialization: 'Anxiety & Depression',
+        experienceYears: 10,
+        bio: 'Works with teens experiencing anxiety, academic stress, and mood regulation challenges.'
+      },
+      {
+        fullName: 'Dr. Emily Rodriguez',
+        email: 'emily.rodriguez@example.com',
+        password: 'Therapist@123',
+        specialization: 'Stress Management',
+        experienceYears: 6,
+        bio: 'Focuses on emotional resilience, confidence-building, and stress management for students.'
+      }
+    ];
+
+    for (const therapistSeed of therapistSeeds) {
+      const [therapistExists] = await connection.query(
+        'SELECT user_id FROM users WHERE email = ?',
+        [therapistSeed.email]
+      );
+
+      if (therapistExists.length > 0) {
+        continue;
+      }
+
+      const bcrypt = require('bcryptjs');
+      const hashedPassword = await bcrypt.hash(therapistSeed.password, 10);
+
+      const [therapistUserResult] = await connection.query(
+        'INSERT INTO users (full_name, email, password, role) VALUES (?, ?, ?, ?)',
+        [therapistSeed.fullName, therapistSeed.email, hashedPassword, 'therapist']
+      );
+
+      await connection.query(
+        `INSERT INTO therapists (user_id, specialization, experience_years, bio, consultation_fee, is_available)
+         VALUES (?, ?, ?, ?, ?, TRUE)`,
+        [
+          therapistUserResult.insertId,
+          therapistSeed.specialization,
+          therapistSeed.experienceYears,
+          therapistSeed.bio,
+          0
+        ]
+      );
+    }
+
+    console.log('Default therapist users ensured');
     
     // Check if sample questionnaire exists
     const [questionnaireExists] = await connection.query(
@@ -267,6 +327,128 @@ const insertDefaultData = async (connection) => {
       );
       console.log('Sample questionnaire created');
     }
+
+    const [[adminUser]] = await connection.query(
+      'SELECT user_id FROM users WHERE email = ?',
+      ['admin@therapyportal.com']
+    );
+
+    const defaultResources = [
+      {
+        title: 'NHS Every Mind Matters',
+        description: 'Official NHS guidance with practical tips to improve mood, stress, sleep and everyday mental wellbeing.',
+        type: 'article',
+        link: 'https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/',
+        content: 'A trusted starting point for UK-based mental health self-help and wellbeing advice.',
+        createdBy: adminUser?.user_id || null
+      },
+      {
+        title: 'YoungMinds Self-Care',
+        description: 'YoungMinds self-care ideas for when life feels overwhelming, written for young people in the UK.',
+        type: 'article',
+        link: 'https://www.youngminds.org.uk/self-care',
+        content: 'Covers practical self-care habits, boundaries, rest, and small steps you can take when struggling.',
+        createdBy: adminUser?.user_id || null
+      },
+      {
+        title: 'Mind: Sleep and Mental Health',
+        description: 'Mind’s guide for 11 to 18 year olds on how sleep and mental health affect each other.',
+        type: 'article',
+        link: 'https://www.mind.org.uk/for-young-people/feelings-and-experiences/sleep-and-mental-health/',
+        content: 'Useful if sleep problems, stress, or low mood are starting to feed into each other.',
+        createdBy: adminUser?.user_id || null
+      },
+      {
+        title: 'NHS Youth Mental Health Videos',
+        description: 'Short NHS Every Mind Matters videos and advice aimed at helping young people look after their mental wellbeing.',
+        type: 'video',
+        link: 'https://www.nhs.uk/every-mind-matters/mental-wellbeing-tips/youth-mental-health/',
+        content: 'A realistic UK-based wellbeing resource page with short videos and practical suggestions.',
+        createdBy: adminUser?.user_id || null
+      },
+      {
+        title: 'Childline Calm Zone',
+        description: 'Breathing, grounding and calming activities for moments when you feel anxious, overwhelmed or panicky.',
+        type: 'exercise',
+        link: 'https://www.childline.org.uk/toolbox/calm-zone/',
+        content: 'A practical toolkit from Childline with simple exercises you can try right away.',
+        createdBy: adminUser?.user_id || null
+      },
+      {
+        title: 'Samaritans 116 123',
+        description: 'Free emotional support in the UK and Ireland, available 24 hours a day if you need someone to listen.',
+        type: 'helpline',
+        link: 'https://www.samaritans.org/how-we-can-help/contact-samaritan/talk-us-phone/',
+        content: 'Call 116 123 free from landlines and mobiles in the UK and Ireland.',
+        createdBy: adminUser?.user_id || null
+      },
+      {
+        title: 'Shout 85258',
+        description: 'Free, confidential 24/7 mental health text support service for anyone in the UK who is struggling to cope.',
+        type: 'helpline',
+        link: 'https://giveusashout.org/get-help/',
+        content: 'Text SHOUT to 85258 any time to start a conversation with a trained volunteer.',
+        createdBy: adminUser?.user_id || null
+      },
+      {
+        title: 'Childline 0800 1111',
+        description: 'Free private support for children and young people in the UK by phone and online.',
+        type: 'helpline',
+        link: 'https://www.childline.org.uk/get-support/talking-childline-counsellor/',
+        content: 'Call 0800 1111 free at any time, or use Childline online support options.',
+        createdBy: adminUser?.user_id || null
+      }
+    ];
+
+    const legacyResourceTitles = [
+      'Understanding Anxiety in Teens',
+      'Mindfulness for Beginners',
+      '988 Crisis Lifeline'
+    ];
+
+    await connection.query(
+      `DELETE FROM resources
+       WHERE title IN (?)`,
+      [legacyResourceTitles]
+    );
+
+    for (const resource of defaultResources) {
+      const [existingResource] = await connection.query(
+        'SELECT resource_id FROM resources WHERE title = ? LIMIT 1',
+        [resource.title]
+      );
+
+      if (existingResource.length > 0) {
+        await connection.query(
+          `UPDATE resources
+           SET description = ?, type = ?, link = ?, content = ?, created_by = ?, is_active = TRUE
+           WHERE resource_id = ?`,
+          [
+            resource.description,
+            resource.type,
+            resource.link,
+            resource.content,
+            resource.createdBy,
+            existingResource[0].resource_id
+          ]
+        );
+      } else {
+        await connection.query(
+          `INSERT INTO resources (title, description, type, link, content, created_by, is_active)
+           VALUES (?, ?, ?, ?, ?, ?, TRUE)`,
+          [
+            resource.title,
+            resource.description,
+            resource.type,
+            resource.link,
+            resource.content,
+            resource.createdBy
+          ]
+        );
+      }
+    }
+
+    console.log('Default UK resources ensured');
     
   } catch (error) {
     console.error('Error inserting default data:', error);
